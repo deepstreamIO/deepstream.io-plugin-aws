@@ -1,6 +1,6 @@
 {
   "name": "@deepstream/plugin-aws",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "A collection of plugins that can be used with deepstream.io and aws",
   "main": "dist/src/plugin.js",
   "scripts": {
