@@ -1,31 +1,40 @@
 import { DeepstreamPlugin, DeepstreamServices, EVENT } from '@deepstream/types'
 import { existsSync } from 'fs'
+import { S3 } from 'aws-sdk'
 import { Aws } from 'aws-cli-js'
 
-interface S3SyncOptions {
+export interface S3SyncOptions {
     syncInterval: number
     syncDir: string
     bucketName: string
     bucketRegion: string
 }
 
-export default class S3Sync extends DeepstreamPlugin {
+export class S3Sync extends DeepstreamPlugin {
     public description = 'S3 Folder Sync'
     private logger = this.services.logger.getNameSpace('S3_FOLDER_SYNC')
-    private aws: Aws
     private syncTimeout: NodeJS.Timeout | null = null
+    private s3: S3
+    private awsCli: Aws
 
-    constructor (private options: S3SyncOptions, private services: Readonly<DeepstreamServices>) {
+    constructor (private options: S3SyncOptions, private services: Readonly<DeepstreamServices>, awsCrendentials: any) {
         super()
-        this.aws = new Aws()
+        this.s3 = new S3({
+            ...awsCrendentials,
+            region: this.options.bucketRegion
+        })
+        this.awsCli = new Aws({
+            accessKey: awsCrendentials.accessKeyId,
+            secretKey: awsCrendentials.secretAccessKey
+        })
     }
 
     public init () {
         if (typeof this.options.syncInterval !== 'number') {
             this.logger.fatal(EVENT.ERROR, 'Invalid or missing "interval"')
         }
-        if (this.options.syncInterval < 60000) {
-            this.logger.fatal(EVENT.ERROR, 'interval must be above 60000')
+        if (this.options.syncInterval < 10000) {
+            this.logger.fatal(EVENT.ERROR, 'interval must be above 10000')
         }
         if (typeof this.options.bucketName !== 'string') {
             this.logger.fatal(EVENT.ERROR, 'Invalid or missing "bucketName"')
@@ -43,7 +52,10 @@ export default class S3Sync extends DeepstreamPlugin {
 
     public async whenReady (): Promise<void> {
         try {
-            await this.aws.command(`aws s3 ls ${this.options.bucketName}`)
+            await this.s3.headBucket({
+                Bucket: this.options.bucketName
+            }).promise()
+            this.logger.info(EVENT.INFO, `AWS S3 Bucket '${this.options.bucketName}' exists`)
         } catch (e) {
             this.logger.fatal(
                 EVENT.ERROR,
@@ -59,7 +71,7 @@ export default class S3Sync extends DeepstreamPlugin {
 
     private async syncDir (): Promise<void> {
         try {
-            await this.aws.command(`s3 sync -region ${this.options.bucketRegion} ${this.options.syncDir} s3://${this.options.bucketName}`)
+            await this.awsCli.command(`s3 sync --region ${this.options.bucketRegion} ${this.options.syncDir} s3://${this.options.bucketName}`)
             this.logger.info(EVENT.INFO, `Synced directory ${this.options.syncDir} successfully`)
         } catch (err) {
             this.logger.error(EVENT.ERROR, 'Error syncing s3 bucket', err)
